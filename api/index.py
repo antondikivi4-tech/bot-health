@@ -15,8 +15,19 @@ def send_message(chat_id, text, reply_markup=None):
     if reply_markup: payload["reply_markup"] = reply_markup
     requests.post(url, json=payload)
 
+def send_invoice(chat_id, title, description, amount_stars):
+    url = f"https://api.telegram.org/bot{TOKEN}/sendInvoice"
+    payload = {
+        "chat_id": chat_id,
+        "title": title,
+        "description": description,
+        "payload": f"stars_{chat_id}",
+        "currency": "XTR",
+        "prices": [{"label": "Стоимость", "amount": amount_stars}]
+    }
+    requests.post(url, json=payload)
+
 def create_cryptobot_invoice(amount_usd, title, chat_id):
-    # Используем официальный метод и правильный заголовок авторизации для Crypto Pay
     url = "https://pay.crypt.bot/api/createInvoice"
     headers = {
         "Content-Type": "application/json",
@@ -35,20 +46,25 @@ def create_cryptobot_invoice(amount_usd, title, chat_id):
         data = response.json()
         if data.get("ok"):
             return data["result"]["pay_url"]
-        else:
-            # Выводим причину ошибки в консоль Vercel для отладки
-            print("CryptoBot Error:", data)
-    except Exception as e:
-        print("Exception:", e)
+    except Exception:
+        pass
     return None
 
-def payment_methods_menu():
+def payment_methods_menu(tier_key):
     return {
         "inline_keyboard": [
-            [{"text": "🥉 Базовый ($15)", "callback_data": "pay_base"}],
-            [{"text": "🥈 Стандарт ($25)", "callback_data": "pay_std"}],
-            [{"text": "🥇 VIP ($50)", "callback_data": "pay_vip"}],
-            [{"text": "💎 Месячное ведение ($75)", "callback_data": "pay_month"}]
+            [{"text": "💳 Оплатить USDT (CryptoBot)", "callback_data": f"crypto_{tier_key}"}],
+            [{"text": "⭐ Оплатить Telegram Звездами", "callback_data": f"stars_{tier_key}"}]
+        ]
+    }
+
+def tariffs_list_menu():
+    return {
+        "inline_keyboard": [
+            [{"text": "🥉 Базовый ($15 / ~1125 ⭐)", "callback_data": "tier_base"}],
+            [{"text": "🥈 Стандарт ($25 / ~1875 ⭐)", "callback_data": "tier_std"}],
+            [{"text": "🥇 VIP ($50 / ~3750 ⭐)", "callback_data": "tier_vip"}],
+            [{"text": "💎 Месячное ведение ($75 / ~5625 ⭐)", "callback_data": "tier_month"}]
         ]
     }
 
@@ -77,34 +93,64 @@ class handler(BaseHTTPRequestHandler):
                     "Напишите ваш пол, возраст, рост, вес и главную цель."
                 )
             
-            elif data.startswith("pay_"):
-                prices = {"pay_base": 15, "pay_std": 25, "pay_vip": 50, "pay_month": 75}
-                titles = {
-                    "pay_base": "Базовый план ($15)", 
-                    "pay_std": "Стандарт ($25)", 
-                    "pay_vip": "VIP ($50)", 
-                    "pay_month": "Месячное ведение ($75)"
+            elif data.startswith("tier_"):
+                tier_names = {
+                    "tier_base": "Базовый план ($15)",
+                    "tier_std": "Стандарт ($25)",
+                    "tier_vip": "VIP ($50)",
+                    "tier_month": "Месячное ведение ($75)"
                 }
-                amount = prices.get(data, 15)
-                title = titles.get(data, "План")
+                send_message(
+                    chat_id, 
+                    f"Вы выбрали тариф: *{tier_names.get(data, 'План')}*\n\nВыберите удобный способ оплаты:", 
+                    reply_markup=payment_methods_menu(data)
+                )
+
+            elif data.startswith("crypto_"):
+                tier = data.replace("crypto_", "")
+                prices = {"tier_base": 15, "tier_std": 25, "tier_vip": 50, "tier_month": 75}
+                titles = {"tier_base": "Базовый план ($15)", "tier_std": "Стандарт ($25)", "tier_vip": "VIP ($50)", "tier_month": "Месячное ведение ($75)"}
+                
+                amount = prices.get(tier, 15)
+                title = titles.get(tier, "План")
                 
                 pay_url = create_cryptobot_invoice(amount, title, chat_id)
                 if pay_url:
                     send_message(chat_id, f"🔗 Ссылка на оплату тарифа *{title}*:", reply_markup={"inline_keyboard": [[{"text": f"💳 Оплатить ${amount} USDT", "url": pay_url}]]})
                 else:
-                    # Запасной вариант: если API не ответило, даем прямую ссылку на @CryptoBot, чтобы клиент не терялся
-                    send_message(chat_id, f"💳 Оплата тарифа *{title}* ($ {amount} USDT)\n\nПожалуйста, переведите средства через бот [@CryptoBot](https://t.me/CryptoBot) и отправьте скриншот сюда.")
+                    send_message(chat_id, f"💳 Оплата тарифа *{title}* (${amount} USDT)\n\nПожалуйста, переведите средства через бот [@CryptoBot](https://t.me/CryptoBot) и отправьте скриншот сюда.")
+
+            elif data.startswith("stars_"):
+                tier = data.replace("stars_", "")
+                # Скорректированный курс звезд с учетом комиссии магазинов приложений
+                star_prices = {"tier_base": 1125, "tier_std": 1875, "tier_vip": 3750, "tier_month": 5625}
+                titles = {"tier_base": "Базовый план", "tier_std": "Стандарт", "tier_vip": "VIP", "tier_month": "Месячное ведение"}
+                
+                stars_amount = star_prices.get(tier, 1125)
+                title_text = titles.get(tier, "План")
+                
+                send_invoice(
+                    chat_id, 
+                    title=f"Тариф: {title_text}", 
+                    description="Оплата индивидуальной программы питания и тренировок", 
+                    amount_stars=stars_amount
+                )
 
         elif "message" in update:
             msg = update["message"]
             chat_id = msg["chat"]["id"]
             text = msg.get("text", "")
 
+            if "successful_payment" in msg:
+                send_message(ADMIN_CHAT_ID, f"💰 *Успешная оплата Звездами (XTR) от клиента* `{chat_id}`!")
+                send_message(chat_id, "🎉 Спасибо за оплату! Ваша покупка успешно подтверждена. Скоро я свяжусь с вами для работы.")
+                return
+
             if text == "/start":
                 user_steps[chat_id] = {"step": 0, "answers": []}
                 send_message(
                     chat_id, 
-                    "Привет! 👋 Я помогу составить индивидуальный план питания и программу тренировок.\n\nНажми кнопку ниже для старта:", 
+                    "Привет! 👋 Я помогу составить индивидуальный план питания и программу тренировок.\n\nНажми кнопку ниже для старта анкеты:", 
                     reply_markup={"inline_keyboard": [[{"text": "🔥 Заполнить анкету", "callback_data": "start_survey"}]]}
                 )
             elif chat_id in user_steps:
@@ -137,8 +183,8 @@ class handler(BaseHTTPRequestHandler):
                     
                     send_message(
                         chat_id, 
-                        "✅ *Анкета полностью заполнена!*\n\nВыберите подходящий тариф для оплаты:", 
-                        reply_markup=payment_methods_menu()
+                        "✅ *Анкета полностью заполнена!*\n\nВыберите подходящий тариф:", 
+                        reply_markup=tariffs_list_menu()
                     )
                     del user_steps[chat_id]
 
