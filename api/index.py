@@ -89,25 +89,51 @@ class handler(BaseHTTPRequestHandler):
                 tier = data.replace("info_", "")
                 prices_usd = {"base": 15, "std": 25, "vip": 50, "month": 75}
                 prices_stars = {"base": 1125, "std": 1875, "vip": 3750, "month": 5625}
-                titles = {
-                    "base": "Базовый план ($15)", 
-                    "std": "Стандарт ($25)", 
-                    "vip": "VIP ($50)", 
-                    "month": "Месячное ведение ($75)"
+                
+                # Подробные описания для каждого тарифа
+                descriptions = {
+                    "base": (
+                        "🥉 *Базовый план ($15)*\n\n"
+                        "• Индивидуальная программа тренировок (зал/дом)\n"
+                        "• Базовые рекомендации по питанию и КБЖУ\n"
+                        "• Срок подготовки: 1-2 дня"
+                    ),
+                    "std": (
+                        "🥈 *Стандарт ($25)*\n\n"
+                        "• Программа тренировок с учетом особенностей и травм\n"
+                        "• Подробный план питания с вариантами блюд и замен\n"
+                        "• Рекомендации по спортивным добавкам"
+                    ),
+                    "vip": (
+                        "🥇 *VIP ($50)*\n\n"
+                        "• Углубленный план тренировок и питания\n"
+                        "• Корректировка программы под ваш прогресс\n"
+                        "• Разбор техники упражнений по видео\n"
+                        "• Приоритетная поддержка"
+                    ),
+                    "month": (
+                        "💎 *Месячное ведение ($75)*\n\n"
+                        "• Полное сопровождение в течение 4 недель\n"
+                        "• Корректировка питания и нагрузок каждую неделю\n"
+                        "• Постоянная связь и ответы на любые вопросы\n"
+                        "• Контроль результатов и мотивация"
+                    )
                 }
                 
                 amount_usd = prices_usd.get(tier, 15)
                 amount_stars = prices_stars.get(tier, 1125)
-                title = titles.get(tier, "План")
+                tier_desc = descriptions.get(tier, "Описание тарифа")
+                title_short = {"base": "Базовый план", "std": "Стандарт", "vip": "VIP", "month": "Месячное ведение"}.get(tier, "План")
                 
                 # Создаем ссылку через CryptoBot
-                pay_url = create_cryptobot_invoice(amount_usd, title, chat_id)
+                pay_url = create_cryptobot_invoice(amount_usd, title_short, chat_id)
                 
-                # Отправляем сообщение с кнопкой CryptoBot
+                message_text = f"{tier_desc}\n\n👇 *Выберите способ оплаты:*"
+                
                 if pay_url:
                     send_message(
                         chat_id, 
-                        f"💳 Вы выбрали: *{title}*\nВыберите способ оплаты:", 
+                        message_text, 
                         reply_markup={
                             "inline_keyboard": [
                                 [{"text": f"💳 Оплатить ${amount_usd} USDT", "url": pay_url}],
@@ -118,7 +144,7 @@ class handler(BaseHTTPRequestHandler):
                 else:
                     send_message(
                         chat_id, 
-                        f"💳 Вы выбрали: *{title}*\nВыберите способ оплаты:", 
+                        message_text, 
                         reply_markup={
                             "inline_keyboard": [
                                 [{"text": f"💳 Оплатить через @CryptoBot", "url": "https://t.me/CryptoBot"}],
@@ -135,7 +161,6 @@ class handler(BaseHTTPRequestHandler):
                 stars_amount = star_prices.get(tier, 1125)
                 title_text = titles.get(tier, "План")
                 
-                # Вызов нативного инвойса Telegram Stars
                 send_invoice(
                     chat_id, 
                     title=f"Тариф: {title_text}", 
@@ -190,7 +215,7 @@ class handler(BaseHTTPRequestHandler):
                     
                     send_message(
                         chat_id, 
-                        "✅ *Анкета полностью заполнена!*\n\nВыберите подходящий тариф:", 
+                        "✅ *Анкета полностью заполнена!*\n\nВыберите интересующий вас тариф:", 
                         reply_markup=tariffs_menu()
                     )
                     del user_steps[chat_id]
