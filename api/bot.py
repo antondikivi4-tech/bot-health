@@ -1,30 +1,46 @@
 import os
-import asyncio
+import json
 from http.server import BaseHTTPRequestHandler
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import Update
+import requests
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-bot = Bot(token=TOKEN)
-dp = Dispatcher()
-
-@dp.message(commands=["start"])
-async def cmd_start(message: types.Message):
-    await bot.send_message(message.chat.id, "Бот на Vercel работает! 🚀")
+TELEGRAM_API_URL = f"https://api.telegram.org/bot{TOKEN}"
 
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
-        content_length = int(self.headers.get('Content-Length', 0))
-        body = self.rfile.read(content_length)
-        asyncio.run(self.handle_update(body))
-        self.send_response(200)
-        self.end_headers()
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            update = json.loads(post_data.decode('utf-8'))
 
-    async def handle_update(self, body):
-        update = Update.model_validate_json(body)
-        await dp.feed_update(bot, update)
+            if "message" in update:
+                chat_id = update["message"]["chat"]["id"]
+                text = update["message"].get("text", "")
+                
+                # Ответ на сообщение пользователя
+                if text == "/start":
+                    reply_text = "Привет! Бот на Vercel успешно работает! 🚀"
+                else:
+                    reply_text = f"Я получил твое сообщение: {text}"
+
+                send_url = f"{TELEGRAM_API_URL}/sendMessage"
+                payload = {
+                    "chat_id": chat_id,
+                    "text": reply_text
+                }
+                requests.post(send_url, json=payload)
+
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"OK")
+            
+        except Exception as e:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(str(e).encode('utf-8'))
 
     def do_GET(self):
         self.send_response(200)
+        self.send_header('Content-type', 'text/plain; charset=utf-8')
         self.end_headers()
-        self.wfile.write(b"Bot is online")
+        self.wfile.write(b"Telegram Bot is online on Vercel!")
