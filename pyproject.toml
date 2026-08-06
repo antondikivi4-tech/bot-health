@@ -7,4 +7,4 @@ dependencies = [
 ]
 
 [tool.vercel]
-entrypoint = "api/bot.py"
+entrypoint = "api/index.py"
