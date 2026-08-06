@@ -50,6 +50,14 @@ def create_cryptobot_invoice(amount_usd, title, chat_id):
         pass
     return None
 
+def get_start_keyboard():
+    # Постоянная кнопка внизу экрана для отправки команды /start
+    return {
+        "keyboard": [[{"text": "/start"}]],
+        "resize_keyboard": True,
+        "is_persistent": True
+    }
+
 def tariffs_menu():
     return {
         "inline_keyboard": [
@@ -82,7 +90,8 @@ class handler(BaseHTTPRequestHandler):
                 send_message(
                     chat_id, 
                     "📋 *Шаг 1 из 3: База и Антропометрия*\n\n"
-                    "Напишите ваш пол, возраст, рост, вес и главную цель."
+                    "Напишите ваш пол, возраст, рост, вес и главную цель.",
+                    reply_markup={"remove_keyboard": True}
                 )
             
             elif data.startswith("info_"):
@@ -90,7 +99,6 @@ class handler(BaseHTTPRequestHandler):
                 prices_usd = {"base": 15, "std": 25, "vip": 50, "month": 75}
                 prices_stars = {"base": 1125, "std": 1875, "vip": 3750, "month": 5625}
                 
-                # Подробные описания для каждого тарифа
                 descriptions = {
                     "base": (
                         "🥉 *Базовый план ($15)*\n\n"
@@ -125,9 +133,7 @@ class handler(BaseHTTPRequestHandler):
                 tier_desc = descriptions.get(tier, "Описание тарифа")
                 title_short = {"base": "Базовый план", "std": "Стандарт", "vip": "VIP", "month": "Месячное ведение"}.get(tier, "План")
                 
-                # Создаем ссылку через CryptoBot
                 pay_url = create_cryptobot_invoice(amount_usd, title_short, chat_id)
-                
                 message_text = f"{tier_desc}\n\n👇 *Выберите способ оплаты:*"
                 
                 if pay_url:
@@ -179,10 +185,13 @@ class handler(BaseHTTPRequestHandler):
                 return
 
             if text == "/start":
-                user_steps[chat_id] = {"step": 0, "answers": []}
+                if chat_id in user_steps:
+                    del user_steps[chat_id]
                 send_message(
                     chat_id, 
-                    "Привет! 👋 Я помогу составить индивидуальный план питания и программу тренировок.\n\nНажми кнопку ниже для старта анкеты:", 
+                    "👋 *Добро пожаловать!*\n\n"
+                    "Я помогу составить индивидуальную программу питания и тренировок.\n\n"
+                    "Нажми кнопку ниже для старта анкеты:", 
                     reply_markup={"inline_keyboard": [[{"text": "🔥 Заполнить анкету", "callback_data": "start_survey"}]]}
                 )
             elif chat_id in user_steps:
@@ -219,6 +228,13 @@ class handler(BaseHTTPRequestHandler):
                         reply_markup=tariffs_menu()
                     )
                     del user_steps[chat_id]
+            else:
+                # Напоминание, если пользователь пишет текст вне анкеты
+                send_message(
+                    chat_id, 
+                    "ℹ️ Чтобы начать работу, пожалуйста, нажмите кнопку *"/start"* внизу экрана.",
+                    reply_markup=get_start_keyboard()
+                )
 
         self.send_response(200)
         self.end_headers()
