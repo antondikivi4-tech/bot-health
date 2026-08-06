@@ -3,11 +3,8 @@ import json
 import requests
 from http.server import BaseHTTPRequestHandler
 
-# Основной токен вашего бота
 TOKEN = "619019:AAuGdlOvomBm5dWuv3nE11Fd5qdiBQQgGWA" 
-# Ваш ID для получения уведомлений
 ADMIN_CHAT_ID = "673791974"
-# Токен от CryptoBot (Crypto Pay API Token)
 CRYPTO_BOT_TOKEN = os.environ.get("CRYPTO_BOT_TOKEN", "ВАШ_ТОКЕН_ОТ_CRYPTO_PAY")
 
 user_data_storage = {}
@@ -64,17 +61,32 @@ class handler(BaseHTTPRequestHandler):
             data = query["data"]
             
             prices = {"crypto_base": 15, "crypto_std": 25, "crypto_vip": 50, "crypto_month": 75}
-            titles = {"crypto_base": "Базовый план", "crypto_std": "Стандарт", "crypto_vip": "VIP", "crypto_month": "Месячное ведение"}
+            titles = {
+                "crypto_base": "Базовый план ($15)", 
+                "crypto_std": "Стандарт ($25)", 
+                "crypto_vip": "VIP ($50)", 
+                "crypto_month": "Месячное ведение ($75)"
+            }
 
             if data == "start_survey":
                 user_data_storage[chat_id] = {"step": 1, "answers": {}}
-                send_message(chat_id, "📋 *Шаг 1: Напишите ваши данные (пол, возраст, рост, вес, цель).*")
+                send_message(
+                    chat_id, 
+                    "📋 *Шаг 1 из 3: База и Антропометрия*\n\n"
+                    "Напишите одним сообщением:\n"
+                    "• Пол, возраст, рост и актуальный вес\n"
+                    "• Тип телосложения и главная задача (похудение/масса)"
+                )
             elif data in prices:
                 pay_url = create_cryptobot_invoice(prices[data], titles[data], chat_id)
                 if pay_url:
-                    send_message(chat_id, f"🔗 Ссылка на оплату *{titles[data]}*:", reply_markup={"inline_keyboard": [[{"text": f"💳 Оплатить ${prices[data]}", "url": pay_url}]]})
+                    send_message(
+                        chat_id, 
+                        f"🔗 Ссылка на оплату тарифа *{titles[data]}*:", 
+                        reply_markup={"inline_keyboard": [[{"text": f"💳 Оплатить ${prices[data]} USDT", "url": pay_url}]]}
+                    )
                 else:
-                    send_message(chat_id, "Ошибка связи с платежной системой.")
+                    send_message(chat_id, "Ошибка связи с платежной системой CryptoBot. Проверьте токен.")
 
         elif "message" in update:
             msg = update["message"]
@@ -82,18 +94,58 @@ class handler(BaseHTTPRequestHandler):
             text = msg.get("text", "")
 
             if text == "/start":
-                send_message(chat_id, "Привет! Заполним анкету?", reply_markup={"inline_keyboard": [[{"text": "Начать", "callback_data": "start_survey"}]]})
+                welcome_text = (
+                    "Привет! 👋 Я помогу составить индивидуальный план питания и программу тренировок.\n\n"
+                    "Нажми кнопку ниже для старта:"
+                )
+                send_message(chat_id, welcome_text, reply_markup={"inline_keyboard": [[{"text": "🔥 Заполнить анкету", "callback_data": "start_survey"}]]})
+            
             elif chat_id in user_data_storage:
                 step = user_data_storage[chat_id]["step"]
-                user_data_storage[chat_id]["answers"][f"step_{step}"] = text
-                
-                if step < 3:
-                    user_data_storage[chat_id]["step"] += 1
-                    send_message(chat_id, f"✅ Принято! *Шаг {user_data_storage[chat_id]['step']}* — напишите ответ.")
-                else:
-                    send_message(chat_id, "✅ Анкета готова! Выберите тариф:", reply_markup=payment_methods_menu())
-                    # Отправка анкеты админу
-                    send_message(ADMIN_CHAT_ID, f"🆕 Новая анкета:\n{user_data_storage[chat_id]['answers']}")
+
+                if step == 1:
+                    user_data_storage[chat_id]["answers"]["step_1"] = text
+                    user_data_storage[chat_id]["step"] = 2
+                    send_message(
+                        chat_id, 
+                        "🏃‍♂️ *Шаг 2 из 3: Активность и Здоровье*\n\n"
+                        "Напишите:\n"
+                        "• Тип работы и режим сна\n"
+                        "• Текущие тренировки и шаги\n"
+                        "• Травмы и ограничения"
+                    )
+                elif step == 2:
+                    user_data_storage[chat_id]["answers"]["step_2"] = text
+                    user_data_storage[chat_id]["step"] = 3
+                    send_message(
+                        chat_id, 
+                        "🥗 *Шаг 3 из 3: Питание и Условия*\n\n"
+                        "Напишите:\n"
+                        "• Где будут тренировки (зал/дом/улица) и инвентарь\n"
+                        "• Приемы пищи, аллергии, бюджет"
+                    )
+                elif step == 3:
+                    user_data_storage[chat_id]["answers"]["step_3"] = text
+                    
+                    # Финал анкеты: выдаем меню выбора тарифов
+                    send_message(
+                        chat_id, 
+                        "✅ *Анкета полностью заполнена!*\n\nВыберите подходящий тариф для оплаты:", 
+                        reply_markup=payment_methods_menu()
+                    )
+                    
+                    # Отправка собранной анкеты вам в админ-чат
+                    ans = user_data_storage[chat_id]["answers"]
+                    report = (
+                        "🆕 *Новая завершенная анкета!*\n\n"
+                        f"📌 *Шаг 1:* {ans.get('step_1')}\n\n"
+                        f"📌 *Шаг 2:* {ans.get('step_2')}\n\n"
+                        f"📌 *Шаг 3:* {ans.get('step_3')}"
+                    )
+                    send_message(ADMIN_CHAT_ID, report)
+                    
+                    # Очищаем временное хранилище для этого пользователя
+                    del user_data_storage[chat_id]
 
         self.send_response(200)
         self.end_headers()
