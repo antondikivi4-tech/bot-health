@@ -5,9 +5,8 @@ from http.server import BaseHTTPRequestHandler
 
 TOKEN = "8847126142:AAG4VExKIvX_N_h-dZ1UkvA8UvrRDMYTbNI" 
 ADMIN_CHAT_ID = "673791974"
-CRYPTO_BOT_TOKEN = os.environ.get("CRYPTO_BOT_TOKEN", "ВАШ_ТОКЕН_ОТ_CRYPTO_PAY")
+CRYPTO_BOT_TOKEN = os.environ.get("CRYPTO_BOT_TOKEN", "")
 
-# Временное хранилище шагов
 user_steps = {}
 
 def send_message(chat_id, text, reply_markup=None):
@@ -17,21 +16,30 @@ def send_message(chat_id, text, reply_markup=None):
     requests.post(url, json=payload)
 
 def create_cryptobot_invoice(amount_usd, title, chat_id):
+    # Используем официальный метод и правильный заголовок авторизации для Crypto Pay
     url = "https://pay.crypt.bot/api/createInvoice"
-    headers = {"Crypto-Pay-API-Token": CRYPTO_BOT_TOKEN}
+    headers = {
+        "Content-Type": "application/json",
+        "Crypto-Pay-API-Token": CRYPTO_BOT_TOKEN
+    }
     payload = {
         "asset": "USDT",
         "amount": str(amount_usd),
         "description": title,
-        "payload": f"user_{chat_id}"
+        "payload": f"user_{chat_id}",
+        "allow_comments": False,
+        "allow_anonymous": False
     }
     try:
-        response = requests.post(url, headers=headers, json=payload)
+        response = requests.post(url, headers=headers, json=payload, timeout=10)
         data = response.json()
         if data.get("ok"):
             return data["result"]["pay_url"]
-    except Exception:
-        pass
+        else:
+            # Выводим причину ошибки в консоль Vercel для отладки
+            print("CryptoBot Error:", data)
+    except Exception as e:
+        print("Exception:", e)
     return None
 
 def payment_methods_menu():
@@ -84,7 +92,8 @@ class handler(BaseHTTPRequestHandler):
                 if pay_url:
                     send_message(chat_id, f"🔗 Ссылка на оплату тарифа *{title}*:", reply_markup={"inline_keyboard": [[{"text": f"💳 Оплатить ${amount} USDT", "url": pay_url}]]})
                 else:
-                    send_message(chat_id, "⚠️ Ошибка создания счета. Проверьте `CRYPTO_BOT_TOKEN` в настройках Vercel.")
+                    # Запасной вариант: если API не ответило, даем прямую ссылку на @CryptoBot, чтобы клиент не терялся
+                    send_message(chat_id, f"💳 Оплата тарифа *{title}* ($ {amount} USDT)\n\nПожалуйста, переведите средства через бот [@CryptoBot](https://t.me/CryptoBot) и отправьте скриншот сюда.")
 
         elif "message" in update:
             msg = update["message"]
@@ -117,7 +126,6 @@ class handler(BaseHTTPRequestHandler):
                         "Напишите где будут тренировки (зал/дом) и ваши предпочтения в еде."
                     )
                 elif current_step >= 3:
-                    # Финал анкеты
                     answers = user_steps[chat_id]["answers"]
                     report = (
                         f"🆕 *Новая анкета от клиента (`{chat_id}`):*\n\n"
