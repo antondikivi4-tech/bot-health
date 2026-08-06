@@ -4,7 +4,7 @@ import requests
 from http.server import BaseHTTPRequestHandler
 
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-ADMIN_CHAT_ID = "ВАШ_АДМИН_CHAT_ID"  # Замените на ваш реальный Chat ID
+ADMIN_CHAT_ID = "673791974"  # Ваш реальный ID
 
 # Временное хранилище анкет в памяти
 user_data_storage = {}
@@ -27,9 +27,9 @@ def send_invoice(chat_id):
         "title": "Индивидуальный план (Питание + Тренировки)",
         "description": "Разработка персональной программы тренировок и плана питания под ваши цели.",
         "payload": "fitness_plan_order",
-        "provider_token": "",  # Пустая строка обязательна для Telegram Stars (XTR)
+        "provider_token": "",  # Обязательно пусто для Telegram Stars (XTR)
         "currency": "XTR",     # Валюта Telegram Stars
-        "prices": [{"label": "План Питания и Тренировок", "amount": 500}]  # 500 Звезд (можно изменить сумму)
+        "prices": [{"label": "План Питания и Тренировок", "amount": 500}]  # 500 Звезд
     }
     requests.post(url, json=payload)
 
@@ -105,7 +105,7 @@ class handler(BaseHTTPRequestHandler):
                     f"📌 *3. Питание и тренировки:*\n{ans.get('step_3', 'Нет данных')}"
                 )
 
-                if ADMIN_CHAT_ID and ADMIN_CHAT_ID != "ВАШ_АДМИН_CHAT_ID":
+                if ADMIN_CHAT_ID:
                     send_message(ADMIN_CHAT_ID, full_report)
 
                 send_message(
@@ -159,7 +159,7 @@ class handler(BaseHTTPRequestHandler):
                 elif step == 3:
                     user_data_storage[chat_id]["answers"]["step_3"] = text
                     
-                    # Анкета завершена — отправляем счет на оплату в Звездах (XTR)
+                    # Анкета полностью заполнена — выставляем счет в Звездах (XTR)
                     send_message(
                         chat_id,
                         "✅ *Анкета полностью заполнена!*\n\n"
