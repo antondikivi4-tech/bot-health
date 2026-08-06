@@ -50,21 +50,13 @@ def create_cryptobot_invoice(amount_usd, title, chat_id):
         pass
     return None
 
-def payment_methods_menu(tier_key):
+def tariffs_menu():
     return {
         "inline_keyboard": [
-            [{"text": "💳 Оплатить USDT (CryptoBot)", "callback_data": f"crypto_{tier_key}"}],
-            [{"text": "⭐ Оплатить Telegram Звездами", "callback_data": f"stars_{tier_key}"}]
-        ]
-    }
-
-def tariffs_list_menu():
-    return {
-        "inline_keyboard": [
-            [{"text": "🥉 Базовый ($15 / ~1125 ⭐)", "callback_data": "tier_base"}],
-            [{"text": "🥈 Стандарт ($25 / ~1875 ⭐)", "callback_data": "tier_std"}],
-            [{"text": "🥇 VIP ($50 / ~3750 ⭐)", "callback_data": "tier_vip"}],
-            [{"text": "💎 Месячное ведение ($75 / ~5625 ⭐)", "callback_data": "tier_month"}]
+            [{"text": "🥉 Базовый ($15 / ~1125 ⭐)", "callback_data": "info_base"}],
+            [{"text": "🥈 Стандарт ($25 / ~1875 ⭐)", "callback_data": "info_std"}],
+            [{"text": "🥇 VIP ($50 / ~3750 ⭐)", "callback_data": "info_vip"}],
+            [{"text": "💎 Месячное ведение ($75 / ~5625 ⭐)", "callback_data": "info_month"}]
         ]
     }
 
@@ -93,42 +85,57 @@ class handler(BaseHTTPRequestHandler):
                     "Напишите ваш пол, возраст, рост, вес и главную цель."
                 )
             
-            elif data.startswith("tier_"):
-                tier_names = {
-                    "tier_base": "Базовый план ($15)",
-                    "tier_std": "Стандарт ($25)",
-                    "tier_vip": "VIP ($50)",
-                    "tier_month": "Месячное ведение ($75)"
+            elif data.startswith("info_"):
+                tier = data.replace("info_", "")
+                prices_usd = {"base": 15, "std": 25, "vip": 50, "month": 75}
+                prices_stars = {"base": 1125, "std": 1875, "vip": 3750, "month": 5625}
+                titles = {
+                    "base": "Базовый план ($15)", 
+                    "std": "Стандарт ($25)", 
+                    "vip": "VIP ($50)", 
+                    "month": "Месячное ведение ($75)"
                 }
-                send_message(
-                    chat_id, 
-                    f"Вы выбрали тариф: *{tier_names.get(data, 'План')}*\n\nВыберите удобный способ оплаты:", 
-                    reply_markup=payment_methods_menu(data)
-                )
-
-            elif data.startswith("crypto_"):
-                tier = data.replace("crypto_", "")
-                prices = {"tier_base": 15, "tier_std": 25, "tier_vip": 50, "tier_month": 75}
-                titles = {"tier_base": "Базовый план ($15)", "tier_std": "Стандарт ($25)", "tier_vip": "VIP ($50)", "tier_month": "Месячное ведение ($75)"}
                 
-                amount = prices.get(tier, 15)
+                amount_usd = prices_usd.get(tier, 15)
+                amount_stars = prices_stars.get(tier, 1125)
                 title = titles.get(tier, "План")
                 
-                pay_url = create_cryptobot_invoice(amount, title, chat_id)
+                # Создаем ссылку через CryptoBot
+                pay_url = create_cryptobot_invoice(amount_usd, title, chat_id)
+                
+                # Отправляем сообщение с кнопкой CryptoBot
                 if pay_url:
-                    send_message(chat_id, f"🔗 Ссылка на оплату тарифа *{title}*:", reply_markup={"inline_keyboard": [[{"text": f"💳 Оплатить ${amount} USDT", "url": pay_url}]]})
+                    send_message(
+                        chat_id, 
+                        f"💳 Вы выбрали: *{title}*\nВыберите способ оплаты:", 
+                        reply_markup={
+                            "inline_keyboard": [
+                                [{"text": f"💳 Оплатить ${amount_usd} USDT", "url": pay_url}],
+                                [{"text": f"⭐ Оплатить {amount_stars} Звездами", "callback_data": f"paystars_{tier}"}]
+                            ]
+                        }
+                    )
                 else:
-                    send_message(chat_id, f"💳 Оплата тарифа *{title}* (${amount} USDT)\n\nПожалуйста, переведите средства через бот [@CryptoBot](https://t.me/CryptoBot) и отправьте скриншот сюда.")
+                    send_message(
+                        chat_id, 
+                        f"💳 Вы выбрали: *{title}*\nВыберите способ оплаты:", 
+                        reply_markup={
+                            "inline_keyboard": [
+                                [{"text": f"💳 Оплатить через @CryptoBot", "url": "https://t.me/CryptoBot"}],
+                                [{"text": f"⭐ Оплатить {amount_stars} Звездами", "callback_data": f"paystars_{tier}"}]
+                            ]
+                        }
+                    )
 
-            elif data.startswith("stars_"):
-                tier = data.replace("stars_", "")
-                # Скорректированный курс звезд с учетом комиссии магазинов приложений
-                star_prices = {"tier_base": 1125, "tier_std": 1875, "tier_vip": 3750, "tier_month": 5625}
-                titles = {"tier_base": "Базовый план", "tier_std": "Стандарт", "tier_vip": "VIP", "tier_month": "Месячное ведение"}
+            elif data.startswith("paystars_"):
+                tier = data.replace("paystars_", "")
+                star_prices = {"base": 1125, "std": 1875, "vip": 3750, "month": 5625}
+                titles = {"base": "Базовый план", "std": "Стандарт", "vip": "VIP", "month": "Месячное ведение"}
                 
                 stars_amount = star_prices.get(tier, 1125)
                 title_text = titles.get(tier, "План")
                 
+                # Вызов нативного инвойса Telegram Stars
                 send_invoice(
                     chat_id, 
                     title=f"Тариф: {title_text}", 
@@ -184,7 +191,7 @@ class handler(BaseHTTPRequestHandler):
                     send_message(
                         chat_id, 
                         "✅ *Анкета полностью заполнена!*\n\nВыберите подходящий тариф:", 
-                        reply_markup=tariffs_list_menu()
+                        reply_markup=tariffs_menu()
                     )
                     del user_steps[chat_id]
 
