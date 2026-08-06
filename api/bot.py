@@ -17,7 +17,6 @@ class handler(BaseHTTPRequestHandler):
                 chat_id = update["message"]["chat"]["id"]
                 text = update["message"].get("text", "")
                 
-                # Ответ на сообщение пользователя
                 if text == "/start":
                     reply_text = "Привет! Бот на Vercel успешно работает! 🚀"
                 else:
