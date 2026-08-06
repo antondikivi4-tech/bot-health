@@ -51,7 +51,6 @@ def create_cryptobot_invoice(amount_usd, title, chat_id):
     return None
 
 def get_start_keyboard():
-    # Постоянная кнопка внизу экрана для отправки команды /start
     return {
         "keyboard": [[{"text": "/start"}]],
         "resize_keyboard": True,
@@ -229,10 +228,9 @@ class handler(BaseHTTPRequestHandler):
                     )
                     del user_steps[chat_id]
             else:
-                # Напоминание, если пользователь пишет текст вне анкеты
                 send_message(
                     chat_id, 
-                    "ℹ️ Чтобы начать работу, пожалуйста, нажмите кнопку *"/start"* внизу экрана.",
+                    'ℹ️ Чтобы начать работу, пожалуйста, нажмите кнопку "/start" внизу экрана.',
                     reply_markup=get_start_keyboard()
                 )
 
