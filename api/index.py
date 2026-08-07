@@ -149,6 +149,7 @@ async def handler(request):
     body = await request.body()
     data = json.loads(body.decode("utf-8"))
     update = Update.de_json(data, app.bot)
-    
+    # Экспорт обработчика для Vercel
+app = handler
     await app.process_update(update)
     return {"statusCode": 200, "body": "OK"}
