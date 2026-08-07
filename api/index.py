@@ -1,243 +1,209 @@
 import os
-import json
-import requests
-from http.server import BaseHTTPRequestHandler
+import logging
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+    filters,
+    ConversationHandler,
+)
 
-TOKEN = "8847126142:AAG4VExKIvX_N_h-dZ1UkvA8UvrRDMYTbNI" 
-ADMIN_CHAT_ID = "673791974"
-CRYPTO_BOT_TOKEN = os.environ.get("CRYPTO_BOT_TOKEN", "")
+# Настройка логирования
+logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-user_steps = {}
+# Токен бота и ID администратора (для уведомлений об оплате)
+TOKEN = os.getenv("TELEGRAM_TOKEN", "ВАШ_ТОКЕН_БОТА")
+ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "ВАШ_ADMIN_ID")
 
-def send_message(chat_id, text, reply_markup=None):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
-    if reply_markup: payload["reply_markup"] = reply_markup
-    requests.post(url, json=payload)
+# Состояния анкеты
+CHOOSING_GOAL, CHOOSING_FORMAT, ENTERING_CONTACT, CHOOSING_PAYMENT = range(4)
 
-def send_invoice(chat_id, title, description, amount_stars):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendInvoice"
-    payload = {
-        "chat_id": chat_id,
-        "title": title,
-        "description": description,
-        "payload": f"stars_{chat_id}",
-        "currency": "XTR",
-        "prices": [{"label": "Стоимость", "amount": amount_stars}]
+# Цены
+PRICES = {
+    "by_rub": {"currency": "BYN", "nutrition": "45 руб.", "training": "45 руб.", "full": "75 руб."},
+    "ru_rub": {"currency": "RUB", "nutrition": "1300 руб.", "training": "1300 руб.", "full": "2200 руб."}
+}
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    context.user_data.clear()
+    
+    keyboard = [
+        [InlineKeyboardButton("🔥 Получить план питания и тренировок", callback_data="start_quest")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        f"Привет, {user.first_name}! 👋\n\n"
+        "Я бот проекта **Культура тела**. Помогу вам достичь вашей физической формы в любом удобном месте!\n"
+        "Давайте подберем для вас персональную программу.",
+        reply_markup=reply_markup,
+        parse_mode="Markdown"
+    )
+
+async def start_quest(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    keyboard = [
+        [InlineKeyboardButton("💪 Набор мышечной массы", callback_data="goal_mass")],
+        [InlineKeyboardButton("🔥 Жиросжигание / Похудение", callback_data="goal_fat")],
+        [InlineKeyboardButton("⚖️ Рекомпозиция (масса + жиросжигание)", callback_data="goal_recomp")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        "**Шаг 1 из 3:** Какая ваша главная цель?",
+        reply_markup=reply_markup,
+        parse_mode="Markdown"
+    )
+    return CHOOSING_GOAL
+
+async def goal_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    goals = {
+        "goal_mass": "Набор мышечной массы",
+        "goal_fat": "Жиросжигание / Похудение",
+        "goal_recomp": "Рекомпозиция"
     }
-    requests.post(url, json=payload)
+    context.user_data["goal"] = goals.get(query.data, "Не указано")
+    
+    keyboard = [
+        [InlineKeyboardButton("🍏 Только Питание", callback_data="format_nut")],
+        [InlineKeyboardButton("🏋️‍♂️ Только Тренировки", callback_data="format_train")],
+        [InlineKeyboardButton("⭐ Питание + Тренировки (Всё включено)", callback_data="format_full")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        "**Шаг 2 из 3:** Выберите формат программы:",
+        reply_markup=reply_markup,
+        parse_mode="Markdown"
+    )
+    return CHOOSING_FORMAT
 
-def create_cryptobot_invoice(amount_usd, title, chat_id):
-    url = "https://pay.crypt.bot/api/createInvoice"
-    headers = {
-        "Content-Type": "application/json",
-        "Crypto-Pay-API-Token": CRYPTO_BOT_TOKEN
+async def format_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    formats = {
+        "format_nut": "Питание",
+        "format_train": "Тренировки",
+        "format_full": "Питание + Тренировки"
     }
-    payload = {
-        "asset": "USDT",
-        "amount": str(amount_usd),
-        "description": title,
-        "payload": f"user_{chat_id}",
-        "allow_comments": False,
-        "allow_anonymous": False
-    }
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=10)
-        data = response.json()
-        if data.get("ok"):
-            return data["result"]["pay_url"]
-    except Exception:
-        pass
-    return None
+    context.user_data["format_key"] = query.data
+    context.user_data["format_name"] = formats.get(query.data, "Не указано")
+    
+    await query.edit_message_text(
+        "**Шаг 3 из 3:** Напишите ваш **Telegram для связи** (например, @username) или номер телефона, чтобы мы могли отправить вам готовый план после оплаты:",
+        parse_mode="Markdown"
+    )
+    return ENTERING_CONTACT
 
-def get_start_keyboard():
-    return {
-        "keyboard": [[{"text": "/start"}]],
-        "resize_keyboard": True,
-        "is_persistent": True
-    }
+async def contact_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    contact = update.message.text
+    context.user_data["contact"] = contact
+    
+    keyboard = [
+        [InlineKeyboardButton("🇧🇾 Беларусь (Бел. руб / Альфа-Банк)", callback_data="pay_by")],
+        [InlineKeyboardButton("🇷🇺 Россия (Рос. руб / Сбер Банк)", callback_data="pay_ru")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    text = (
+        "✅ Анкета заполнена!\n\n"
+        f"🎯 **Цель:** {context.user_data['goal']}\n"
+        f"📋 **Формат:** {context.user_data['format_name']}\n"
+        f"👤 **Контакт:** {contact}\n\n"
+        "💳 **Выберите удобный способ оплаты и валюту:**"
+    )
+    
+    await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+    return CHOOSING_PAYMENT
 
-def tariffs_menu():
-    return {
-        "inline_keyboard": [
-            [{"text": "🥉 Базовый ($15 / ~1125 ⭐)", "callback_data": "info_base"}],
-            [{"text": "🥈 Стандарт ($25 / ~1875 ⭐)", "callback_data": "info_std"}],
-            [{"text": "🥇 VIP ($50 / ~3750 ⭐)", "callback_data": "info_vip"}],
-            [{"text": "💎 Месячное ведение ($75 / ~5625 ⭐)", "callback_data": "info_month"}]
-        ]
-    }
+async def payment_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    pay_type = query.data
+    format_key = context.user_data.get("format_key", "format_full")
+    
+    if pay_type == "pay_by":
+        if format_key == "format_nut":
+            price = PRICES["by_rub"]["nutrition"]
+        elif format_key == "format_train":
+            price = PRICES["by_rub"]["training"]
+        else:
+            price = PRICES["by_rub"]["full"]
+            
+        payment_instructions = (
+            f"🛒 К оплате: **{price}**\n\n"
+            "**Реквизиты Альфа-Банк (Беларусь):**\n"
+            "• Счет получателя: `BY38ALFA3014317T0K0010270000`\n"
+            "• Назначение платежа: Оплата информационных услуг\n\n"
+            "⚠️ **Важно:** После совершения платежа отправьте чек (фото или скриншот) сюда в чат или напишите нашему менеджеру @AVDDESINGSTUDIO, и мы сразу начнем подготовку вашей программы!"
+        )
+    else:
+        if format_key == "format_nut":
+            price = PRICES["ru_rub"]["nutrition"]
+        elif format_key == "format_train":
+            price = PRICES["ru_rub"]["training"]
+        else:
+            price = PRICES["ru_rub"]["full"]
+            
+        payment_instructions = (
+            f"🛒 К оплате: **{price}**\n\n"
+            "**Оплата из России (Сбер Банк Беларусь):**\n"
+            "Вы можете перевести средства по номеру счета:\n\n"
+            "• Банк: Сбер Банк (Беларусь)\n"
+            "• Счет получателя: `BY58BPSB3014R000000000275330`\n\n"
+            "⚠️ **Важно:** После перевода обязательно отправьте скриншот чека сюда в чат или нашему менеджеру @AVDDESINGSTUDIO."
+        )
 
-class handler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        content_length = int(self.headers.get('Content-Length', 0))
-        post_data = self.rfile.read(content_length)
-        
+    # Уведомление администратору
+    if ADMIN_CHAT_ID and ADMIN_CHAT_ID != "ВАШ_ADMIN_ID":
         try:
-            update = json.loads(post_data.decode('utf-8'))
-        except Exception:
-            self.send_response(200)
-            self.end_headers()
-            return
+            admin_msg = (
+                f"🔔 **Новая заявка на оплату!**\n"
+                f"• Цель: {context.user_data.get('goal')}\n"
+                f"• Формат: {context.user_data.get('format_name')}\n"
+                f"• Контакт: {context.user_data.get('contact')}\n"
+                f"• Регион: {'Беларусь (Альфа)' if pay_type == 'pay_by' else 'Россия (Сбер)'}"
+            )
+            await context.bot.send_message(chat_id=ADMIN_CHAT_ID, text=admin_msg, parse_mode="Markdown")
+        except Exception as e:
+            logger.error(f"Не удалось отправить уведомление админу: {e}")
 
-        if "callback_query" in update:
-            query = update["callback_query"]
-            chat_id = query["message"]["chat"]["id"]
-            data = query["data"]
-            
-            if data == "start_survey":
-                user_steps[chat_id] = {"step": 1, "answers": []}
-                send_message(
-                    chat_id, 
-                    "📋 *Шаг 1 из 3: База и Антропометрия*\n\n"
-                    "Напишите ваш пол, возраст, рост, вес и главную цель.",
-                    reply_markup={"remove_keyboard": True}
-                )
-            
-            elif data.startswith("info_"):
-                tier = data.replace("info_", "")
-                prices_usd = {"base": 15, "std": 25, "vip": 50, "month": 75}
-                prices_stars = {"base": 1125, "std": 1875, "vip": 3750, "month": 5625}
-                
-                descriptions = {
-                    "base": (
-                        "🥉 *Базовый план ($15)*\n\n"
-                        "• Индивидуальная программа тренировок (зал/дом)\n"
-                        "• Базовые рекомендации по питанию и КБЖУ\n"
-                        "• Срок подготовки: 1-2 дня"
-                    ),
-                    "std": (
-                        "🥈 *Стандарт ($25)*\n\n"
-                        "• Программа тренировок с учетом особенностей и травм\n"
-                        "• Подробный план питания с вариантами блюд и замен\n"
-                        "• Рекомендации по спортивным добавкам"
-                    ),
-                    "vip": (
-                        "🥇 *VIP ($50)*\n\n"
-                        "• Углубленный план тренировок и питания\n"
-                        "• Корректировка программы под ваш прогресс\n"
-                        "• Разбор техники упражнений по видео\n"
-                        "• Приоритетная поддержка"
-                    ),
-                    "month": (
-                        "💎 *Месячное ведение ($75)*\n\n"
-                        "• Полное сопровождение в течение 4 недель\n"
-                        "• Корректировка питания и нагрузок каждую неделю\n"
-                        "• Постоянная связь и ответы на любые вопросы\n"
-                        "• Контроль результатов и мотивация"
-                    )
-                }
-                
-                amount_usd = prices_usd.get(tier, 15)
-                amount_stars = prices_stars.get(tier, 1125)
-                tier_desc = descriptions.get(tier, "Описание тарифа")
-                title_short = {"base": "Базовый план", "std": "Стандарт", "vip": "VIP", "month": "Месячное ведение"}.get(tier, "План")
-                
-                pay_url = create_cryptobot_invoice(amount_usd, title_short, chat_id)
-                message_text = f"{tier_desc}\n\n👇 *Выберите способ оплаты:*"
-                
-                if pay_url:
-                    send_message(
-                        chat_id, 
-                        message_text, 
-                        reply_markup={
-                            "inline_keyboard": [
-                                [{"text": f"💳 Оплатить ${amount_usd} USDT", "url": pay_url}],
-                                [{"text": f"⭐ Оплатить {amount_stars} Звездами", "callback_data": f"paystars_{tier}"}]
-                            ]
-                        }
-                    )
-                else:
-                    send_message(
-                        chat_id, 
-                        message_text, 
-                        reply_markup={
-                            "inline_keyboard": [
-                                [{"text": f"💳 Оплатить через @CryptoBot", "url": "https://t.me/CryptoBot"}],
-                                [{"text": f"⭐ Оплатить {amount_stars} Звездами", "callback_data": f"paystars_{tier}"}]
-                            ]
-                        }
-                    )
+    await query.edit_message_text(payment_instructions, parse_mode="Markdown")
 
-            elif data.startswith("paystars_"):
-                tier = data.replace("paystars_", "")
-                star_prices = {"base": 1125, "std": 1875, "vip": 3750, "month": 5625}
-                titles = {"base": "Базовый план", "std": "Стандарт", "vip": "VIP", "month": "Месячное ведение"}
-                
-                stars_amount = star_prices.get(tier, 1125)
-                title_text = titles.get(tier, "План")
-                
-                send_invoice(
-                    chat_id, 
-                    title=f"Тариф: {title_text}", 
-                    description="Оплата индивидуальной программы питания и тренировок", 
-                    amount_stars=stars_amount
-                )
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Диалог сброшен. Чтобы начать заново, отправьте /start.")
+    return ConversationHandler.END
 
-        elif "message" in update:
-            msg = update["message"]
-            chat_id = msg["chat"]["id"]
-            text = msg.get("text", "")
+def main():
+    application = Application.builder().token(TOKEN).build()
+    
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            CHOOSING_GOAL: [CallbackQueryHandler(goal_chosen, pattern="^goal_")],
+            CHOOSING_FORMAT: [CallbackQueryHandler(format_chosen, pattern="^format_")],
+            ENTERING_CONTACT: [MessageHandler(filters.TEXT & ~filters.COMMAND, contact_received)],
+            CHOOSING_PAYMENT: [CallbackQueryHandler(payment_selected, pattern="^pay_")],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
 
-            if "successful_payment" in msg:
-                send_message(ADMIN_CHAT_ID, f"💰 *Успешная оплата Звездами (XTR) от клиента* `{chat_id}`!")
-                send_message(chat_id, "🎉 Спасибо за оплату! Ваша покупка успешно подтверждена. Скоро я свяжусь с вами для работы.")
-                return
+    application.add_handler(conv_handler)
+    application.add_handler(CallbackQueryHandler(start_quest, pattern="^start_quest$"))
 
-            if text == "/start":
-                if chat_id in user_steps:
-                    del user_steps[chat_id]
-                send_message(
-                    chat_id, 
-                    "🔥 *Добро пожаловать!* \n\n"
-                    "Я помогу тебе достичь тела твоей мечты — **без изнурительных диет, голодовок и бесконечного кардио**.\n\n"
-                    "🎯 *Что я предлагаю:*\n"
-                    "• Грамотно составленный индивидуальный план питания под твои любимые продукты\n"
-                    "• Эффективную программу тренировок под твой уровень и возможности (зал или дом)\n"
-                    "• Научный подход к результату без вреда для здоровья\n\n"
-                    "👇 *Готов(а) изменить свою форму? Нажми кнопку ниже, чтобы заполнить анкету:*", 
-                    reply_markup={"inline_keyboard": [[{"text": "🔥 Заполнить анкету", "callback_data": "start_survey"}]]}
-                )
-            elif chat_id in user_steps:
-                current_step = user_steps[chat_id]["step"]
-                user_steps[chat_id]["answers"].append(text)
+    application.run_polling()
 
-                if current_step == 1:
-                    user_steps[chat_id]["step"] = 2
-                    send_message(
-                        chat_id, 
-                        "🏃‍♂️ *Шаг 2 из 3: Активность и Здоровье*\n\n"
-                        "Напишите ваш режим дня, уровень активности и наличие травм."
-                    )
-                elif current_step == 2:
-                    user_steps[chat_id]["step"] = 3
-                    send_message(
-                        chat_id, 
-                        "🥗 *Шаг 3 из 3: Питание и Условия*\n\n"
-                        "Напишите где будут тренировки (зал/дом) и ваши предпочтения в еде."
-                    )
-                elif current_step >= 3:
-                    answers = user_steps[chat_id]["answers"]
-                    report = (
-                        f"🆕 *Новая анкета от клиента (`{chat_id}`):*\n\n"
-                        f"📌 *Шаг 1:* {answers[0]}\n"
-                        f"📌 *Шаг 2:* {answers[1]}\n"
-                        f"📌 *Шаг 3:* {answers[2]}"
-                    )
-                    send_message(ADMIN_CHAT_ID, report)
-                    
-                    send_message(
-                        chat_id, 
-                        "✅ *Анкета полностью заполнена!*\n\nВыберите интересующий вас тариф:", 
-                        reply_markup=tariffs_menu()
-                    )
-                    del user_steps[chat_id]
-            else:
-                send_message(
-                    chat_id, 
-                    'ℹ️ Чтобы начать работу, пожалуйста, нажмите кнопку "/start" внизу экрана.',
-                    reply_markup=get_start_keyboard()
-                )
-
-        self.send_response(200)
-        self.end_headers()
-        return
+if __name__ == "__main__":
+    main()
