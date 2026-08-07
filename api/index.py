@@ -204,6 +204,7 @@ def main():
     application.add_handler(CallbackQueryHandler(start_quest, pattern="^start_quest$"))
 
     application.run_polling()
-
+# Экспорт для Vercel, чтобы пройти этап сборки
+app = application = main
 if __name__ == "__main__":
     main()
